@@ -11,7 +11,7 @@ AstrBot 插件：学习通 DDL 提醒
   - 可零配置使用：WebUI 留空也能用，账号在聊天里用 cxlogin / cxsetphone / cxpwd 设置
   - 指令：作业 / 课程 / cxlogin / cxsetphone / cxpwd / cxaccount / cxcode / cxsetcookie / cxbind / cxunbind / cxcheck / cxhelp
 
-登录态、提醒状态持久化在插件目录 data.json 中，重启不丢失。
+登录态、提醒状态持久化在 data/plugin_data/astrbot_plugin_chaoxing_ddl/data.json 中，重启、重装插件均不丢失。
 """
 
 import asyncio
@@ -19,6 +19,7 @@ import importlib.util
 import json
 import os
 import re
+import shutil
 import sys
 from datetime import datetime, timedelta
 
@@ -47,8 +48,26 @@ LOGIN_MODE_COOKIE = api.LOGIN_MODE_COOKIE
 LOGIN_MODE_PASSWORD = api.LOGIN_MODE_PASSWORD
 LOGIN_MODE_SMS = api.LOGIN_MODE_SMS
 
-_DATA_FILE = os.path.join(os.path.dirname(__file__), "data.json")
-_CAPTCHA_FILE = os.path.join(os.path.dirname(__file__), "captcha.png")
+# ---------- 持久化目录 ----------
+# 按 AstrBot 上架规范，持久化数据必须写在 data/plugin_data/<plugin_name>/，
+# 不能写在插件自身目录（重装/更新会丢数据）。
+_PLUGIN_NAME = "astrbot_plugin_chaoxing_ddl"
+
+
+def _resolve_data_dir() -> str:
+    """优先用 AstrBot 官方 API 拿插件数据目录，失败时按约定路径兜底"""
+    try:
+        from astrbot.api.star import StarTools
+
+        return str(StarTools.get_data_dir(_PLUGIN_NAME))
+    except Exception:
+        return os.path.join("data", "plugin_data", _PLUGIN_NAME)
+
+
+_DATA_DIR = _resolve_data_dir()
+os.makedirs(_DATA_DIR, exist_ok=True)
+_DATA_FILE = os.path.join(_DATA_DIR, "data.json")
+_CAPTCHA_FILE = os.path.join(_DATA_DIR, "captcha.png")
 
 _MODE_LABELS = {
     LOGIN_MODE_AUTO: "自动（Cookie → 密码 → 验证码）",
@@ -112,7 +131,7 @@ def _mask_phone(phone: str) -> str:
     "astrbot_plugin_chaoxing_ddl",
     "WuHen",
     "学习通作业 DDL 提醒：自动读取未交作业截止时间，剩最后 N 天时主动推送提醒",
-    "0.5.1",
+    "0.5.2",
 )
 class ChaoxingDdlPlugin(Star):
     def __init__(self, context: Context, config: dict | None = None):
@@ -132,6 +151,7 @@ class ChaoxingDdlPlugin(Star):
     # ---------- 生命周期 ----------
 
     async def initialize(self):
+        self._migrate_legacy_data()
         cfg_phone = str(self.config.get("phone", "") or "").strip()
         cfg_password = str(self.config.get("password", "") or "").strip()
         data = self._load_data()
@@ -158,6 +178,23 @@ class ChaoxingDdlPlugin(Star):
                 "学习通DDL插件: 尚未配置账号。无需改 WebUI 配置，"
                 "直接在 QQ 里发送 cxlogin（或 cxsetphone 手机号 / cxpwd 密码）即可开始使用。"
             )
+
+    def _migrate_legacy_data(self):
+        """旧版把 data.json 写在插件自身目录，重装会丢；迁移到 data/plugin_data/"""
+        legacy = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data.json")
+        if not os.path.exists(legacy):
+            return
+        try:
+            if os.path.exists(_DATA_FILE):
+                # 新位置已有数据，直接丢弃旧文件，避免覆盖
+                os.remove(legacy)
+                logger.info("学习通DDL插件: 已清理插件目录内的旧版 data.json")
+                return
+            os.makedirs(_DATA_DIR, exist_ok=True)
+            shutil.move(legacy, _DATA_FILE)
+            logger.info(f"学习通DDL插件: 旧版 data.json 已迁移到 {_DATA_DIR}")
+        except Exception as e:
+            logger.warning(f"学习通DDL插件: 迁移旧版 data.json 失败（不影响使用）: {e}")
 
     def _has_account(self) -> bool:
         """是否已有可用登录凭据：Cookie，或手机号+密码"""
@@ -757,7 +794,7 @@ class ChaoxingDdlPlugin(Star):
         if mode == LOGIN_MODE_PASSWORD and not client.password:
             yield event.plain_result(
                 "🔑 请直接回复学习通密码（也可以发 cxpwd 你的密码）\n"
-                "密码只会保存在本机插件目录的 data.json 里；不想存密码可改用 cxlogin 短信"
+                "密码只会保存在本机 data/plugin_data 插件数据目录里；不想存密码可改用 cxlogin 短信"
             )
             pwd = await self._wait_user_input(
                 "pwd", "请回复学习通密码", timeout=_CHOICE_TIMEOUT, send_prompt=False

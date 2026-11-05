@@ -28,17 +28,15 @@ import asyncio
 import base64
 import hashlib
 import json
-import logging
 import re
 import time
 from datetime import datetime
 from typing import Optional
 
+from astrbot.api import logger
 import httpx
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
-
-logger = logging.getLogger(__name__)
 
 # 网页登录 AES key = iv（逆向自 passport2-static.chaoxing.com/js/fanya/login.js）
 _WEB_AES_KEY = b"u2oh6Vu^HWe4_AES"
