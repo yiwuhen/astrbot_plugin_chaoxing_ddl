@@ -1,0 +1,6 @@
+name: astrbot_plugin_chaoxing_ddl
+desc: 学习通作业/DDL 提醒插件：自动登录学习通读取未交作业截止时间，进入自定义提醒窗口后通过 QQ 等平台主动推送
+help: 无需配置即可用：发「cxlogin」引导设置账号并登录；「作业」查 DDL；「课程」查我的课程；「cxhelp」看全部命令；「cxbind」绑定提醒
+version: v0.5.1
+author: WuHen
+repo: https://github.com/yourname/astrbot_plugin_chaoxing_ddl

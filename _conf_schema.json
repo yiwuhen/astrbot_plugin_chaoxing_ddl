@@ -1,0 +1,76 @@
+{
+  "phone": {
+    "description": "学习通手机号（可选）",
+    "type": "string",
+    "hint": "留空也行：安装后在 QQ/聊天里发 cxlogin，会引导你输入手机号；或直接发 cxsetphone 13800000000",
+    "default": ""
+  },
+  "password": {
+    "description": "学习通密码（可选）",
+    "type": "string",
+    "hint": "留空也行：发 cxlogin 选择密码登录时会提示你输入；也可以用短信验证码登录完全免密码",
+    "default": ""
+  },
+  "cookie": {
+    "description": "Cookie 登录（可选，最稳）",
+    "type": "string",
+    "hint": "浏览器登录 i.chaoxing.com 后按 F12 → Network → 任意请求的 Request Headers 里复制整段 Cookie 粘贴到这里。也可以用指令 cxsetcookie 提交；全部留空时插件不会报错，等你在聊天里配置",
+    "default": ""
+  },
+  "login_mode": {
+    "description": "默认登录方式",
+    "type": "string",
+    "hint": "auto = 自动（先 Cookie，再密码，需要时弹图形验证码）；password = 账号密码；sms = 手机短信验证码（会发短信给你，需要你回复验证码）；cookie = 只用 Cookie。也可以随时用指令 cxlogin 临时切换",
+    "default": "auto"
+  },
+  "captcha_timeout": {
+    "description": "验证码等待超时（秒）",
+    "type": "int",
+    "hint": "登录触发验证码时，把验证码图片推送到聊天窗口后等待你回复的时长；超时则本轮跳过，下次巡检自动重试",
+    "default": 180
+  },
+  "remind_days_before": {
+    "description": "提前提醒天数列表",
+    "type": "list",
+    "hint": "每项一个数字，作业截止前 N 天推送提醒。例如 [2,1] 表示剩最后2天时提醒一次、剩最后1天时再提醒一次",
+    "default": [
+      2
+    ]
+  },
+  "check_interval_minutes": {
+    "description": "巡检间隔（分钟）",
+    "type": "int",
+    "hint": "每隔多少分钟登录一次学习通检查作业 DDL，建议 30~120，频率不要太高以免触发风控",
+    "default": 60
+  },
+  "push_targets": {
+    "description": "固定推送目标（unified_msg_origin）",
+    "type": "list",
+    "hint": "提醒消息推送的会话，格式如 aiocqhttp:GroupMessage:123456。一般不用手填，直接在 QQ 会话里发 cxbind 即可",
+    "default": []
+  },
+  "include_exams": {
+    "description": "是否同时检查考试",
+    "type": "bool",
+    "hint": "开启后也会尝试抓取各课程的考试安排（部分学校页面结构不同，可能抓不到，作业不受影响）",
+    "default": false
+  },
+  "course_filter": {
+    "description": "只监控指定课程（可选）",
+    "type": "list",
+    "hint": "填写课程名关键词，如 [高等数学, 大学英语]。留空表示监控全部课程",
+    "default": []
+  },
+  "digest_hour": {
+    "description": "每日汇总推送时刻（0-23，-1 关闭）",
+    "type": "int",
+    "hint": "每天固定时刻推送一份「未交作业一览」，-1 表示关闭该功能",
+    "default": 9
+  },
+  "digest_days": {
+    "description": "每日汇总的时间范围（天）",
+    "type": "int",
+    "hint": "每日汇总只包含截止时间在 N 天内的未交作业，0 表示汇总全部未交作业",
+    "default": 7
+  }
+}
