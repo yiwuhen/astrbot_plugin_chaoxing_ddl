@@ -29,6 +29,10 @@ help: |
   - cxbind / cxunbind：绑定 / 解绑当前会话接收提醒
   - cxcheck：立即巡检一次
 version: v0.5.1
+tags:
+  - 学习通
+  - 作业提醒
+  - DDL提醒
 author: WuHen
 repo: https://github.com/yiwuhen/astrbot_plugin_chaoxing_ddl
 support_platforms:
