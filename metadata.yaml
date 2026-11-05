@@ -32,7 +32,7 @@ version: v0.5.2
 author: WuHen
 repo: https://github.com/yiwuhen/astrbot_plugin_chaoxing_ddl
 # 插件分类：三方集成（市场分类 slug，WebUI 显示为「三方集成」）
-category: 三方工具
+category: 三方集成
 tags:
   - 学习通
   - 超星
