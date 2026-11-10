@@ -29,11 +29,11 @@ help: |
   - cxsetcookie <cookie>：粘贴浏览器 Cookie 直接登录
   - cxbind / cxunbind：绑定 / 解绑当前会话接收提醒
   - cxcheck：立即巡检一次
-version: v0.6.0
+version: v0.6.1
 author: WuHen
 repo: https://github.com/yiwuhen/astrbot_plugin_chaoxing_ddl
 # 插件分类：三方集成（市场分类 slug，WebUI 显示为「三方集成」）
-category: integrations
+category: 三方集成
 tags:
   - 学习通
   - 超星
