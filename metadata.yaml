@@ -11,6 +11,7 @@ desc: |
   - 零配置可用：账号可直接在聊天里设置，支持密码 / 手机短信验证码 / Cookie 三种登录方式
   - 支持图形验证码交互、登录态持久化、被踢下线自动重登、巡检失败告警
   - 支持课程过滤、考试提醒（best-effort）、课程与作业手动查询
+  - 补充函数调用：注册为 AI 工具（Function Calling），问「我作业还有哪些」「高数啥时候截止」即可触发，不必记命令
 
   指令：作业 / 课程 / cxhelp / cxlogin / cxbind / cxcheck 等，发「cxhelp」查看全部。
 help: |
@@ -28,16 +29,18 @@ help: |
   - cxsetcookie <cookie>：粘贴浏览器 Cookie 直接登录
   - cxbind / cxunbind：绑定 / 解绑当前会话接收提醒
   - cxcheck：立即巡检一次
-version: v0.5.2
+version: v0.6.0
 author: WuHen
 repo: https://github.com/yiwuhen/astrbot_plugin_chaoxing_ddl
 # 插件分类：三方集成（市场分类 slug，WebUI 显示为「三方集成」）
-category: 三方集成
+category: integrations
 tags:
   - 学习通
   - 超星
+  - DDL
   - 作业提醒
   - 教务
+  - AI工具
 support_platforms:
   - aiocqhttp
   - qq_official

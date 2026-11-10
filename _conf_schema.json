@@ -1,4 +1,10 @@
 {
+  "llm_tools": {
+    "description": "让 AI 自己查作业",
+    "type": "bool",
+    "hint": "开启后把「查作业/查课程/查状态/绑定提醒」注册成 AI 工具，用户直接问「我作业还有哪些」就能触发，不必记命令。需要模型支持函数调用（AstrBot 默认开启）",
+    "default": true
+  },
   "phone": {
     "description": "学习通手机号（可选）",
     "type": "string",

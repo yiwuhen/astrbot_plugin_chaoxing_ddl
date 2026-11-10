@@ -27,6 +27,9 @@ from astrbot.api import logger
 from astrbot.api.event import filter, MessageChain, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
 
+# 极老版本 AstrBot 没有 filter.llm_tool，退化为空装饰器，避免整个插件加载失败
+_llm_tool = getattr(filter, "llm_tool", None) or (lambda *a, **k: (lambda fn: fn))
+
 # 按「文件路径」加载同目录的 chaoxing_api.py，而不是 from chaoxing_api import。
 # 原因：AstrBot 用 importlib 按路径加载插件，若用裸模块名导入，会占用 sys.modules
 # 里的全局名字 "chaoxing_api"。热重载 / 覆盖安装时旧的缓存模块不会被清掉，
@@ -131,7 +134,7 @@ def _mask_phone(phone: str) -> str:
     "astrbot_plugin_chaoxing_ddl",
     "WuHen",
     "学习通作业 DDL 提醒：自动读取未交作业截止时间，剩最后 N 天时主动推送提醒",
-    "0.5.2",
+    "0.6.0",
 )
 class ChaoxingDdlPlugin(Star):
     def __init__(self, context: Context, config: dict | None = None):
@@ -638,6 +641,8 @@ class ChaoxingDdlPlugin(Star):
                 "cxcheck —— 立即巡检一次",
                 "cxhelp —— 显示本帮助",
                 "",
+                "💡 接了 AI 模型后可以直接问：「我作业还有哪些」「高数啥时候截止」，不必记命令",
+                "",
                 "──────────────",
                 f"账号：{phone_desc}",
                 f"登录方式：{mode_label}",
@@ -959,6 +964,191 @@ class ChaoxingDdlPlugin(Star):
             yield event.plain_result("✅ 已收到选择")
         else:
             yield event.plain_result("当前没有等待中的验证码请求（可能已超时，可发送 cxlogin 重新发起）")
+
+    # ---------- AI 工具（Function Calling） ----------
+    #
+    # 把「查作业 / 查课程 / 查状态 / 绑定提醒」注册给大模型，用户不用记命令，
+    # 直接问「我作业还有哪些」「这周有什么要交的」就能触发。
+    # 登录、设置密码这类写操作仍建议走命令（需要交互接验证码）。
+
+    def _llm_enabled(self) -> bool:
+        return bool(self.config.get("llm_tools", True))
+
+    async def _llm_homework_text(self, course_arg: str = "", include_all: bool = False) -> str:
+        """AI 工具用的作业查询，返回纯文本（不发提醒、不改 triggered 状态）。"""
+        if not self._client:
+            return "插件未初始化，请先在 AstrBot 里重载插件"
+        if not self._has_account():
+            return _NO_ACCOUNT_HINT
+
+        now = datetime.now()
+        course_arg = (course_arg or "").strip()
+        course_name = ""
+        if course_arg:
+            courses = await self._get_courses()
+            course = self._match_course(courses, course_arg)
+            if not course:
+                names = "、".join(c["name"] for c in courses[:15]) or "（没取到课程）"
+                return f"没找到匹配「{course_arg}」的课程。当前课程：{names}"
+            course_name = course["name"]
+            items = await self._client.get_work_deadlines(course)
+        else:
+            items = await self._fetch_deadlines()
+
+        if include_all:
+            if not items:
+                return "学习通没有返回任何作业条目。"
+            lines = [f"📋 作业全部条目（共 {len(items)} 项，含已完成）", ""]
+            for it in items[:30]:
+                ddl = it.get("ddl")
+                ddl_str = ddl.strftime("%m-%d %H:%M") if ddl else "无时间限制/未知"
+                lines.append(
+                    f"• [{it['course']}] {it['title']}｜"
+                    f"状态：{it.get('status') or '（空）'}｜截止：{ddl_str}"
+                )
+            if len(items) > 30:
+                lines.append(f"… 及另外 {len(items) - 30} 项")
+            return "\n".join(lines)
+
+        pending = [
+            it
+            for it in items
+            if it.get("status") in UNFINISHED_STATUS
+            and (not it.get("ddl") or it["ddl"] > now)
+        ]
+        # 有 DDL 的按时间近的排前面，无时间限制的排最后
+        pending.sort(key=lambda x: (x.get("ddl") is None, x.get("ddl") or now))
+
+        scope = f"《{course_name}》" if course_name else ""
+        if not pending:
+            return f"✅ {scope}当前没有未完成的作业。"
+
+        msg = f"📋 {scope}未交作业 {len(pending)} 项：\n\n" + "\n\n".join(
+            self._format_item(it, now) for it in pending[:10]
+        )
+        if len(pending) > 10:
+            msg += f"\n\n… 及另外 {len(pending) - 10} 项"
+        return msg
+
+    async def _llm_courses_text(self) -> str:
+        if not self._client:
+            return "插件未初始化，请先在 AstrBot 里重载插件"
+        if not self._has_account():
+            return _NO_ACCOUNT_HINT
+        courses = await self._get_courses()
+        if not courses:
+            return "学习通没有返回课程列表，可能登录已失效，可发送 cxlogin 重新登录。"
+        lines = [f"📚 我的课程（共 {len(courses)} 门）："]
+        for i, course in enumerate(courses, 1):
+            lines.append(f"{i}. {course['name']}")
+        return "\n".join(lines)
+
+    def _llm_status_text(self) -> str:
+        client = self._client
+        if client is None:
+            return "插件未初始化，请先重载插件"
+        data = self._load_data()
+        phone = _mask_phone(client.phone) if client.phone else "未设置"
+        logged = "✅ 已登录" if client.logged_in else "⚠️ 未登录"
+        bound = data.get("bound_umos", []) or []
+        bound_desc = f"{len(bound)} 个会话" if bound else "未绑定"
+        remind_desc = "、".join(f"剩 {d} 天" for d in self._get_remind_days())
+        try:
+            interval = max(15, int(self.config.get("check_interval_minutes", 60)))
+        except Exception:
+            interval = 60
+        try:
+            digest_hour = int(self.config.get("digest_hour", 9))
+        except Exception:
+            digest_hour = 9
+        digest_desc = f"每天 {digest_hour:02d}:00" if 0 <= digest_hour <= 23 else "已关闭"
+        account_desc = "已配置" if self._has_account() else "未配置（需发 cxlogin）"
+        return "\n".join(
+            [
+                "👤 学习通助手状态",
+                f"账号：{phone}（{account_desc}）",
+                f"登录状态：{logged}",
+                f"登录方式：{_MODE_LABELS.get(self._get_login_mode(), self._get_login_mode())}",
+                f"提醒推送：{bound_desc}",
+                f"提醒节点：{remind_desc}",
+                f"巡检间隔：{interval} 分钟",
+                f"每日汇总：{digest_desc}",
+            ]
+        )
+
+    def _llm_bind_text(self, umo: str) -> str:
+        data = self._load_data()
+        bound: list[str] = data.get("bound_umos", []) or []
+        if umo in bound:
+            return "当前会话已经绑定过学习通提醒了，作业 DDL 会推到这里。"
+        bound.append(umo)
+        data["bound_umos"] = bound
+        self._save_data(data)
+        return "✅ 已把当前会话设为提醒推送目标，作业 DDL 到点会推送到这里。"
+
+    @_llm_tool(name="cx_query_homework")
+    async def tool_query_homework(
+        self, event: AstrMessageEvent, course: str = "", include_all: bool = False
+    ):
+        """查询学习通（超星）未交作业及其截止时间（DDL）。用户问「我还有哪些作业没做」「这周有什么要交的」「高数作业什么时候截止」时调用。
+
+        Args:
+            course(string): 课程名或课程序号，只想查某一门课时填，如「高数」或「2」；留空表示查全部课程
+            include_all(boolean): 是否连已完成的作业一起列出（核对/诊断用），默认 false 只列未完成
+        """
+        if not self._llm_enabled():
+            yield event.plain_result("AI 查询已在插件配置里关闭，改用「作业」命令吧。")
+            return
+        self._last_umo = event.unified_msg_origin
+        try:
+            text = await self._llm_homework_text(course, include_all)
+        except Exception as exc:
+            logger.error(f"学习通DDL插件: AI 查询作业失败: {exc}")
+            text = f"查询失败：{exc}\n可能需要重新登录，可发送 cxlogin 选择登录方式。"
+        yield event.plain_result(text)
+
+    @_llm_tool(name="cx_list_courses")
+    async def tool_list_courses(self, event: AstrMessageEvent):
+        """列出当前学习通账号下的全部课程（含序号，可配合作业查询按课程筛选）。用户问「我有哪些课」「课程列表」时调用。"""
+        if not self._llm_enabled():
+            yield event.plain_result("AI 查询已在插件配置里关闭，改用「课程」命令吧。")
+            return
+        self._last_umo = event.unified_msg_origin
+        try:
+            text = await self._llm_courses_text()
+        except Exception as exc:
+            logger.error(f"学习通DDL插件: AI 查询课程失败: {exc}")
+            text = f"课程获取失败：{exc}\n可发送 cxlogin 重新登录。"
+        yield event.plain_result(text)
+
+    @_llm_tool(name="cx_account_status")
+    async def tool_account_status(self, event: AstrMessageEvent):
+        """查询学习通助手的运行状态：账号是否已配置、是否已登录、提醒推送绑定情况、提醒节点与巡检间隔。用户问「提醒开了吗」「登录了吗」「什么时候提醒我」时调用。"""
+        if not self._llm_enabled():
+            yield event.plain_result("AI 查询已在插件配置里关闭，改用「cxaccount」命令吧。")
+            return
+        self._last_umo = event.unified_msg_origin
+        try:
+            text = self._llm_status_text()
+        except Exception as exc:
+            logger.error(f"学习通DDL插件: AI 查询状态失败: {exc}")
+            text = "状态查询出错了，可发送 cxaccount 查看。"
+        yield event.plain_result(text)
+
+    @_llm_tool(name="cx_bind_reminder")
+    async def tool_bind_reminder(self, event: AstrMessageEvent):
+        """把当前聊天（群/私聊）绑定为学习通作业提醒的推送目标。用户说「以后在这里提醒我」「就在这个群推作业提醒」时调用。"""
+        if not self._llm_enabled():
+            yield event.plain_result("AI 操作已在插件配置里关闭，改用「cxbind」命令吧。")
+            return
+        umo = event.unified_msg_origin
+        self._last_umo = umo
+        try:
+            text = self._llm_bind_text(umo)
+        except Exception as exc:
+            logger.error(f"学习通DDL插件: AI 绑定提醒失败: {exc}")
+            text = "绑定出错了，可发送 cxbind 重试。"
+        yield event.plain_result(text)
 
     # ---------- 指令：作业与提醒 ----------
 
